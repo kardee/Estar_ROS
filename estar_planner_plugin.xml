@@ -1,0 +1,5 @@
+<library path="lib/libestar_lib">
+ <class name="Estar_planner/EstarROS" type="Estar_planner::EstarROS" base_class_type="nav_core::BaseGlobalPlanner">
+   <description>This is E* global planner plugin by karthikeyan.</description>
+ </class>
+</library>
