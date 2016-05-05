@@ -45,19 +45,20 @@ void EstarROS::initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ro
 			for(int j=0;j<height;++j)
 			{
 				size_t cost = static_cast<size_t>(costmap_->getCost(i,j));
-				if(cost == 0)
+				if(cost == 0.0)
 					Estar_set_speed(&estar,i,j,0.0);
 				else
 					Estar_set_speed(&estar,i,j,1.0);
 			}
 		}
-		
-		ROS_INFO("Estar planner initialized successfully.");
+		ROS_INFO("Estar planner width = %d and height = %d.",width,height);
+		ROS_INFO("Estar planner %s is initialized successfully.",name.c_str());
+		ROS_INFO("estar.pq.len = %d.",estar.pq.len);
 		initialized_ = true;
 	}
 	else
 	{	
-		ROS_WARN("This planner has allready been initialized..doing nothing");
+		ROS_WARN("This planner has already been initialized..doing nothing");
 	}
 		
 }
@@ -71,7 +72,7 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 		ROS_ERROR("The planner has not been initialized, please call initialize() to use the planner.");
 		return false;
 	}
-	ROS_DEBUG("Got a start : %.2f, %.2f and a goal : %.2f, %.2f",start.pose.position.x,
+	ROS_INFO("Got a start : %.2f, %.2f and a goal : %.2f, %.2f",start.pose.position.x,
 								     start.pose.position.y,
 								     goal.pose.position.x,
 								     goal.pose.position.y);
@@ -99,25 +100,29 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 	ROS_INFO("Setting E* goal to %2d %2d",goalX,goalY);
 	Estar_set_goal(&estar,goalX,goalY);
 	have_goal = 1;
+	ROS_INFO("Goal is set finally.");
 	
 	while(estar.pq.len != 0)
-	{	
+	{
+		ROS_INFO("estar.pq.len = %d.",estar.pq.len);
 		Estar_propagate (&estar);;
 	}
 	ROS_INFO("Tracing back from start %2d %2d",startX,startY);
-	
+	/*
 	size_t ii, jj;
 	double topkey, maxknown, maxoverall;
         estar_cell_t * cell;
 	topkey = Estar_pqueue_topkey (&estar.pq);
+	ROS_INFO("Topkey = %.2f.",topkey);
   	maxknown = 0.0;
  	maxoverall = 0.0;
  	for (ii = 0; ii < width; ++ii)
  	{
 	  	for (jj = 0; jj < height; ++jj)
-  	  	{
+  	  	{	
    	 		cell = estar_grid_at (&estar.grid, ii, jj);
-  	        	if (cell->rhs == cell->phi && isfinite(cell->rhs)) 
+  	        	//ROS_INFO("cell->pqi = %f and cell->rhs = %f.\n",cell->pqi,cell->rhs);
+			if (cell->rhs == cell->phi && isfinite(cell->rhs)) 
   	       		{
 	           		if (0 == cell->pqi && cell->rhs <= topkey && maxknown < cell->rhs) 
                     		{
@@ -128,6 +133,7 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 	               			maxoverall = cell->rhs;
 	            		}
                 	}	 
+                	
           	}
         }
         
@@ -139,14 +145,26 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
         {
 		maxoverall = 0.0001;
         }
-	
-	cell = estar_grid_at(&estar.grid, startX,startY);
-	if(cell->pqi == 0 && cell->rhs <= maxknown)
+	ROS_INFO("Maxknown = %.4f maxoverall = %.4f.",maxknown,maxoverall);
+	*/
+	estar_cell_t *cell = estar_grid_at(&estar.grid, startX,startY);
+	if(std::isinf(cell->rhs))
 	{
+	  if(std::isinf(cell->phi))
+	  {
+	    ROS_WARN("E* start cell has infinite rhs and phi");
+	  }
+	  else
+	  {
+	    ROS_WARN("E* start cell has infinite rhs and phi = %g.",cell->phi);
+	  }
+	}
+	else
+	{  
+		ROS_INFO("Into tracing path.");
 		double px,py,dd,dmax,ds;
 		px = startX;
 		py = startY;
-
 		dmax = 1.3 * cell->rhs;
 		ds = 0.1;
 		for(dd = 0.0; dd <= dmax; dd = dd + ds)
@@ -197,7 +215,21 @@ EstarROS::~EstarROS()
 {
 	Estar_fini(&estar);
 }
+void EstarROS::Estar_pqueue_fini (estar_pqueue_t * pq)
+{
+	//cout << "Deallocating the memory of pqueue" << endl;
+	free(pq->heap);
+  	pq->len = 0;
+  	pq->cap = 0;
+}
 
+void EstarROS::Estar_grid_fini (estar_grid_t * grid)
+{
+	//cout << "Deallocating the memory of grids" << endl;
+  	free(grid->cell);
+  	grid->dimx = 0;
+ 	grid->dimy = 0;
+}
 void EstarROS::Estar_fini(estar_t * estar)
 {
 	 Estar_pqueue_fini (&estar->pq);
@@ -480,6 +512,7 @@ double EstarROS::Estar_pqueue_topkey (estar_pqueue_t * pq)
 {
 	if (pq->len > 0) 
 	{
+		ROS_INFO("pq->len = %d.",pq->len);
     		return pq->heap[1]->key;
   	}
   	return INFINITY;
@@ -709,6 +742,7 @@ estar_cell_t* EstarROS::Estar_pqueue_extract (estar_pqueue_t * pq)
   
   	if (1 == pq->len) 
 	{
+		
     		pq->len = 0;
     		return cell;
   	}
@@ -839,6 +873,20 @@ int EstarROS::Estar_cell_calc_gradient (estar_cell_t * cell, double * gx, double
   
   	return 2;
 }
+
+void EstarROS::Estar_set_goal (estar_t * estar, size_t ix, size_t iy)
+{
+	estar_cell_t * goal = estar_grid_at (&estar->grid, ix, iy);
+	goal->rhs = 0.0;
+	goal->flags |= ESTAR_FLAG_GOAL;
+	//printf("goal->flags = %d\n", goal->flags);
+	goal->flags &= ~ESTAR_FLAG_OBSTACLE;
+	//printf("goal->flags = %d\n", goal->flags);
+	printf("Inserting the goal cell in the priority queue\n");
+	Estar_pqueue_insert_or_update (&estar->pq, goal);
+}
+
+
 
 double EstarROS::interpolate(double cost, double primary, double secondary)
 {
