@@ -33,8 +33,15 @@ EstarROS::EstarROS(string name, costmap_2d::Costmap2DROS* costmap_ros)
 
 void EstarROS::initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros)
 {
+	std::fstream file;
+	file.open("/home/kardee13/FILE/Estar_ROS_INITIALIZE.txt", std::fstream::in|std::fstream::out|std::fstream::trunc);
+	if (!file.is_open())
+	{
+	  cout << "Some error occured\n" << endl;
+	}
 	if(!initialized_)
 	{
+		file << "We are Into initialize function." << endl; 
 		costmap_ros_ = costmap_ros;
 		costmap_ = costmap_ros_->getCostmap();
 
@@ -42,32 +49,44 @@ void EstarROS::initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ro
 
 		originX = costmap_->getOriginX();
 		originY = costmap_->getOriginY();
-		
+		file << " originX = " << originX << " originY = " << originY << endl;  
 		width = costmap_->getSizeInCellsX();
 		height = costmap_->getSizeInCellsY();
-
 		resolution = costmap_->getResolution();
+		file << " width = " << width 
+		     << "\n height = " << height
+		     << "\n resolution = " << resolution 
+		     << "\n Mapsize = " << width * height << endl;
 		mapSize = width * height;
 		
  		tBreak= 1+1/(mapSize);
 		value = 0;
+		//file << " Entering to the Estar_init function." <<  endl;
 		Estar_init(&estar,width,height);
-
+	        //file << " Now we setting the speedv using the Estar_set_speed function." <<  endl;
 		for(int i=0;i<width;++i)
 		{	
 			for(int j=0;j<height;++j)
 			{
 				size_t cost = static_cast<size_t>(costmap_->getCost(i,j));
 				if(cost == 0.0)
-					Estar_set_speed(&estar,i,j,0.0);
-				else
+				{
+					//printf("Inside the if statement cost = %zd\n",cost);
 					Estar_set_speed(&estar,i,j,1.0);
+				}
+				else
+				{
+					//printf("Inside the else statement cost = %zd\n",cost);
+					Estar_set_speed(&estar,i,j,0.0);
+			
+				}  
 			}
 		}
 		ROS_INFO("Estar planner width = %d and height = %d.",width,height);
 		ROS_INFO("Estar planner %s is initialized successfully.",name.c_str());
 		ROS_INFO("estar.pq.len = %d.",estar.pq.len);
 		initialized_ = true;
+		file << "Estar_ROS initialized successfully" << endl;
 	}
 	else
 	{	
@@ -80,17 +99,27 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 		              const geometry_msgs::PoseStamped& goal, 
 		              std::vector<geometry_msgs::PoseStamped>& plan)
 {
+  	std::fstream file;
+	file.open("/home/kardee13/FILE/Estar_ROS_MAKEPLAN.txt", std::fstream::in|std::fstream::out|std::fstream::trunc);
+	if (!file.is_open())
+	{
+	  cout << "Some error occured\n" << endl;
+	}
 	if(!initialized_)
 	{
-		ROS_ERROR("The planner has not been initialized, please call initialize() to use the planner.");
+		ROS_ERROR("Thmakee planner has not been initialized, please call initialize() to use the planner.");
 		return false;
 	}
 	ROS_INFO("Got a start : %.2f, %.2f and a goal : %.2f, %.2f",start.pose.position.x,
 								     start.pose.position.y,
 								     goal.pose.position.x,
 								     goal.pose.position.y);
+	file << "StartX = " << start.pose.position.x
+	     << "StartY = " << start.pose.position.y
+	     << "goalX = " << goal.pose.position.x
+	     << "goalY = " << goal.pose.position.y << endl;
 	plan.clear();
-	
+
 	if(goal.header.frame_id != costmap_ros_->getGlobalFrameID())
 	{	
 		ROS_ERROR("This planner as configured will only accept goals in the %s frame,but a goal was sent in the %s frame.",
@@ -117,11 +146,12 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 	
 	while(estar.pq.len != 0)
 	{
-		ROS_INFO("estar.pq.len = %d.",estar.pq.len);
-		Estar_propagate (&estar);;
+		//ROS_INFO("estar.pq.len = %d.",estar.pq.len);
+		Estar_propagate (&estar);
+		//ROS_INFO("estar.pq.len = %d.",estar.pq.len);
 	}
 	ROS_INFO("Tracing back from start %2d %2d",startX,startY);
-	/*
+	
 	size_t ii, jj;
 	double topkey, maxknown, maxoverall;
         estar_cell_t * cell;
@@ -149,7 +179,6 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
                 	
           	}
         }
-        
         if (maxknown == 0.0) 
         {    
 		maxknown = 0.0001;
@@ -159,35 +188,28 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 		maxoverall = 0.0001;
         }
 	ROS_INFO("Maxknown = %.4f maxoverall = %.4f.",maxknown,maxoverall);
-	*/
-	estar_cell_t *cell = estar_grid_at(&estar.grid, startX,startY);
-	if(std::isinf(cell->rhs))
-	{
-	  if(std::isinf(cell->phi))
-	  {
-	    ROS_WARN("E* start cell has infinite rhs and phi");
-	  }
-	  else
-	  {
-	    ROS_WARN("E* start cell has infinite rhs and phi = %g.",cell->phi);
-	  }
-	}
-	else
+	
+	cell = estar_grid_at(&estar.grid, startX,startY);
+	if (0 == cell->pqi && cell->rhs <= maxknown) 
 	{  
 		ROS_INFO("Into tracing path.");
 		double px,py,dd,dmax,ds;
 		px = startX;
 		py = startY;
 		dmax = 1.3 * cell->rhs;
-		ds = 0.1;
+		geometry_msgs::PoseStamped next = start;
+		ds = resolution/4;
 		for(dd = 0.0; dd <= dmax; dd = dd + ds)
 		{
+                        ROS_INFO("INSIDE FOR LOOP.");  		  
 			double gx,gy,gg;
-			
-			if(0 == Estar_cell_calc_gradient(cell,&gx,&gy));
-			{	
+			ROS_INFO("before if statement of cell gradeint.");
+			/*if(0 == Estar_cell_calc_gradient(cell,&gx,&gy));
+			{
+			        ROS_INFO("Breaking becoz cell gradient is zero");
 				break;
-			}
+			}*/
+			ROS_INFO("After cell gradient.");
 			gg = sqrt(pow(gx,2.0) + pow(gy,2.0));
 			gx = gx * ds/gg;
 			gy = gy * ds/gg;
@@ -195,17 +217,17 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 			px = px + gx;
 			py = py + gy;
 			
-			geometry_msgs::PoseStamped pose = goal;
-	
-			pose.pose.position.x = px;
-			pose.pose.position.y = py;
-			pose.pose.position.z = 0.0;
+			next.pose.position.x = px*resolution;
+			next.pose.position.y = py*resolution;
+			next.pose.position.z = 0.0;
 			
-			pose.pose.orientation.x = 0.0;
-			pose.pose.orientation.y = 0.0;
-			pose.pose.orientation.z = 0.0;
-			pose.pose.orientation.w = 0.0;
+			next.pose.orientation.x = 0.0;
+			next.pose.orientation.y = 0.0;
+			next.pose.orientation.z = 0.0;
+			next.pose.orientation.w = 1.0;
 			
+			plan.push_back(next);
+
 			size_t ix = (size_t) rint (px);
 			size_t iy = (size_t) rint (py);
 	
@@ -217,10 +239,13 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 			cell = estar_grid_at(&estar.grid,ix,iy);
 			if(cell->flags & ESTAR_FLAG_GOAL)
 			{
+				plan.push_back(goal);
+				
 				ROS_INFO("Hit the goal at %2d %2d",ix,iy);
 				break;
 			}
-		}		
+		}
+		
 	}
 	return true;
 }
@@ -257,13 +282,28 @@ void  EstarROS::Estar_init(estar_t *estar,size_t dimx,size_t dimy)
 
 void EstarROS::Estar_pqueue_init(estar_pqueue_t * pq, size_t cap)
 {
+    	std::fstream file;
+	file.open("/home/kardee13/FILE/Estar_ROS_pqueue_init.txt", std::fstream::in|std::fstream::out|std::fstream::trunc);
+	if (!file.is_open())
+	{
+	  cout << "Some error occured\n" << endl;
+	}
+	
 	pq->heap = (estar_cell_t**) malloc (sizeof(estar_cell_t**) * (cap+1));
 	pq->len = 0;
 	pq->cap = cap;	
+	file << "pq->heap = " << pq->heap << " pq->len = "<<pq->len << " pq->cap = " << pq->cap << endl;
+	file.close();
 }
 
 void EstarROS::Estar_grid_init(estar_grid_t * grid, size_t dimx, size_t dimy)
 {
+  std::fstream file;
+	file.open("/home/kardee13/FILE/Estar_ROS_grid_init.txt", std::fstream::in|std::fstream::out|std::fstream::trunc);
+	if (!file.is_open())
+	{
+	  cout << "Some error occured\n" << endl;
+	}
 	size_t x,y;
 	estar_cell_t *cell;
 	estar_cell_t **nbor;
@@ -272,6 +312,7 @@ void EstarROS::Estar_grid_init(estar_grid_t * grid, size_t dimx, size_t dimy)
 	
 	grid->dimx = dimx;
         grid->dimy = dimy;
+	file << "Grid->dimx = " << dimx << " Grid->dimy = " << dimy << " Grid->cell = " << grid->cell << endl;
 	int sum =0;
 	for (x = 0; x < dimx; ++x)
         {
@@ -280,6 +321,7 @@ void EstarROS::Estar_grid_init(estar_grid_t * grid, size_t dimx, size_t dimy)
 			//++sum;
 			//cout << "Allocated memory " << sum << endl;
       			cell = estar_grid_at(grid, x, y);
+			file << "X = " << x << " Y = " << y << " cell = " << cell << endl;
       			cell->cost = 1.0;
            		cell->phi = INFINITY;
             		cell->rhs = INFINITY;
@@ -336,6 +378,7 @@ void EstarROS::Estar_grid_init(estar_grid_t * grid, size_t dimx, size_t dimy)
       			*nbor = 0;
     		}
      	}
+     	file.close();
 }
 
 void EstarROS::Estar_set_speed(estar_t *estar, size_t ix, size_t iy, double speed)
@@ -525,7 +568,7 @@ double EstarROS::Estar_pqueue_topkey (estar_pqueue_t * pq)
 {
 	if (pq->len > 0) 
 	{
-		ROS_INFO("pq->len = %d.",pq->len);
+		//ROS_INFO("pq->len = %d.",pq->len);
     		return pq->heap[1]->key;
   	}
   	return INFINITY;
@@ -617,7 +660,8 @@ void EstarROS::swap (estar_cell_t ** aa, estar_cell_t ** bb)
 
 
 void EstarROS::Estar_propagate (estar_t * estar)
-{
+{   
+        //ROS_INFO("Entering into Estar_propagate");
 	estar_cell_t * cell;
   	estar_cell_t ** nbor;
   
@@ -629,9 +673,10 @@ void EstarROS::Estar_propagate (estar_t * estar)
   
   	// The chunk below could be placed into a function called expand,
   	// but it is not needed anywhere else.
-  
+        //printf("cell->phi = %f, cell->rhs = %f\n",cell->phi,cell->rhs);
   	if (cell->phi > cell->rhs) 
 	{
+	       // printf("inside the if statement\n");
     		cell->phi = cell->rhs;
     		for(nbor = cell->nbor; *nbor != 0; ++nbor)
 		{
@@ -640,6 +685,7 @@ void EstarROS::Estar_propagate (estar_t * estar)
   	}
   	else 
 	{
+	        //printf("inside the else statement\n");
     		cell->phi = INFINITY;
     		for (nbor = cell->nbor; *nbor != 0; ++nbor) 
 		{
@@ -743,8 +789,9 @@ void EstarROS::Estar_dump_queue (estar_t * estar, char const * pfx)
 
 estar_cell_t* EstarROS::Estar_pqueue_extract (estar_pqueue_t * pq)
 {
+        //ROS_INFO("Entering into Estar_pqueue_extract\n");
 	estar_cell_t * cell;
-  
+        //printf("pq->len = %d\n",pq->len);
   	if (0 == pq->len) 
 	{
     		return NULL;
@@ -757,6 +804,7 @@ estar_cell_t* EstarROS::Estar_pqueue_extract (estar_pqueue_t * pq)
 	{
 		
     		pq->len = 0;
+		//printf("returning the cell & pq->len = %d\n",pq->len);
     		return cell;
   	}
   
@@ -776,42 +824,54 @@ int EstarROS::Estar_cell_calc_gradient (estar_cell_t * cell, double * gx, double
   	estar_cell_t * n1;
   	estar_cell_t * n2;
   	int direction;
-  
+  	std::fstream file;
+	file.open("/home/kardee13/FILE/Estar_cell_gradient.txt", std::fstream::in|std::fstream::out|std::fstream::app);
+	if (!file.is_open())
+	{
+	  cout << "Some error occured\n" << endl;
+	}
   	n1 = NULL;
+	file << "Inside Estar cell gradient." << endl;
   	for (nn = cell->nbor; *nn != NULL; ++nn) 
   	{
-    		if (isfinite ((*nn)->rhs)
-			&& (*nn)->rhs < cell->rhs
-			&& (n1 == NULL || (*nn)->rhs < n1->rhs)) 
+	        file << "\t*nn = " << *nn << endl;
+    		if (isfinite ((*nn)->rhs) && (*nn)->rhs < cell->rhs && (n1 == NULL || (*nn)->rhs < n1->rhs)) 
 		{
       			n1 = *nn;
+			file << "\t\tInside for::if setting n1 = *nn." << endl;
     		}
   	}
+  	file << "\t\t n1 = " << n1 << endl;
   	if (NULL == n1) 
 	{
+		file << "Inside NULL == n1" << endl;
     		return 0;
   	}
-  
+         
   	direction = n1 - cell;
   	// +1 means right
   	// -1 means left
   	// +dimx means up (grid is arranged like pixels on a screen)
   	// -dimx means down
-  
+        file << "\t\tDirection = " << direction << endl;
   	n2 = NULL;
   	for (nn = cell->nbor; *nn != NULL; ++nn) 
 	{
+		file << "\t*nn = " << *nn << endl;
     		if (isfinite ((*nn)->rhs)
 			&& (*nn) != n1
 			&& direction != cell - *nn /* check it is not opposite n1 */
 			&& (n2 == NULL || (*nn)->rhs < n2->rhs)) 
 		{
+		  
 		      n2 = *nn;
+		      file << "\t\tInside for::if setting n2 = *nn." << endl;
     		}
   	}
-
+	file << "\t\t n1 = " << n1 << endl;
  	if (NULL == n2) 
 	{
+		file << "\t\tInside NULL == n2" << endl;
     		if (direction == -1) 
 		{
       			*gx = n1->rhs - cell->rhs; /* some negative value */
@@ -832,11 +892,13 @@ int EstarROS::Estar_cell_calc_gradient (estar_cell_t * cell, double * gx, double
       			*gx = 0.0;
      		 	*gy = cell->rhs - n1->rhs; /* some positive value */
     		}
+    		file << "RETURNING Val 1."<< endl;
     		return 1;
   	}
   
   	if (direction == -1) 
 	{
+	        
     		*gx = n1->rhs - cell->rhs;
     		if (cell - n2 > 0) 
 		{
@@ -850,13 +912,16 @@ int EstarROS::Estar_cell_calc_gradient (estar_cell_t * cell, double * gx, double
   	else if (direction == 1) 
 	{
     		*gx = cell->rhs - n1->rhs;
+                file << "\t\t*gx = " << *gx << endl;
     		if (cell - n2 > 0) 
 		{
       			*gy = n2->rhs - cell->rhs;
+			 file << "\t\t*gy = " << *gy << endl;
     		}
     		else 
 		{
       			*gy = cell->rhs - n2->rhs;
+			file << "\t\t*gy = " << *gy << endl;
     		}
   	}
   	else if (direction < 0) 
@@ -883,7 +948,7 @@ int EstarROS::Estar_cell_calc_gradient (estar_cell_t * cell, double * gx, double
     		}
     		*gy = cell->rhs - n1->rhs;
   	}
-  
+	file << "RETURNING Val 2."<< endl;
   	return 2;
 }
 
