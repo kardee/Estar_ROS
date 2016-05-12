@@ -204,11 +204,11 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
                         ROS_INFO("INSIDE FOR LOOP.");  		  
 			double gx,gy,gg;
 			ROS_INFO("before if statement of cell gradeint.");
-			/*if(0 == Estar_cell_calc_gradient(cell,&gx,&gy));
+			if(0 == Estar_cell_calc_gradient(cell,&gx,&gy));
 			{
 			        ROS_INFO("Breaking becoz cell gradient is zero");
 				break;
-			}*/
+			}
 			ROS_INFO("After cell gradient.");
 			gg = sqrt(pow(gx,2.0) + pow(gy,2.0));
 			gx = gx * ds/gg;
@@ -240,7 +240,6 @@ bool EstarROS::makePlan(const geometry_msgs::PoseStamped& start,
 			if(cell->flags & ESTAR_FLAG_GOAL)
 			{
 				plan.push_back(goal);
-				
 				ROS_INFO("Hit the goal at %2d %2d",ix,iy);
 				break;
 			}
